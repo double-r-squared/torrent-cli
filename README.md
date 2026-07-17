@@ -127,6 +127,66 @@ In the REPL:
 | `/help`             | show commands                         |
 | `/quit`             | exit                                  |
 
+## Three ways to drive it
+
+One capability layer (Prowlarr operations) behind three front doors:
+
+**1. Interactive assistant (humans).** `torrent-cli` with no arguments — the
+conversational REPL above, where an LLM turns your words into searches and grabs.
+
+**2. Direct commands (humans and scripts).** Run one operation and exit — no LLM
+involved. Add `--json` for machine-readable output.
+
+```bash
+torrent-cli search ubuntu 24.04
+torrent-cli grab 1                 # grabs result #1 from your last search
+torrent-cli list-indexers
+torrent-cli find-indexers linux
+torrent-cli add-indexer LinuxTracker
+torrent-cli search sintel --json | jq .results
+```
+
+`search` remembers its results, so a later `grab <id>` — even in a separate
+shell — knows which release you mean.
+
+**3. MCP server (LLM agents).** Exposes `search`, `grab`, `add_indexer`,
+`list_indexers`, and `find_indexers` over the
+[Model Context Protocol](https://modelcontextprotocol.io), so Claude Desktop,
+Claude Code, or any MCP client can drive Prowlarr.
+
+```bash
+pip install 'torrent-cli[mcp]'
+torrent-cli mcp        # serves over stdio
+```
+
+Add it to Claude Desktop (`claude_desktop_config.json`):
+
+```json
+{
+  "mcpServers": {
+    "torrent-cli": {
+      "command": "torrent-cli-mcp",
+      "env": {
+        "PROWLARR_URL": "http://localhost:9696",
+        "PROWLARR_API_KEY": "your-prowlarr-api-key"
+      }
+    }
+  }
+}
+```
+
+Or with Claude Code:
+
+```bash
+claude mcp add torrent-cli \
+  --env PROWLARR_URL=http://localhost:9696 \
+  --env PROWLARR_API_KEY=your-prowlarr-api-key \
+  -- torrent-cli-mcp
+```
+
+Tool-call approval happens in the MCP client (you approve each grab in Claude),
+so the server runs tools directly.
+
 ## Managing indexers
 
 Indexers are the sources Prowlarr searches. torrent-cli exposes indexer

@@ -19,11 +19,13 @@ dependencies = [
 ]
 
 [project.optional-dependencies]
+mcp = ["mcp>=1.2"]
 dev = ["ruff>=0.6", "pytest>=8.0"]
 
 [project.scripts]
 torrent-cli = "torrent_cli.app:main"
 tcli = "torrent_cli.app:main"
+torrent-cli-mcp = "torrent_cli.mcp_server:main"
 
 [tool.hatch.build.targets.wheel]
 packages = ["torrent_cli"]

@@ -23,18 +23,53 @@ HELP_TEXT = """commands:
 anything else is treated as a request, e.g. "download big buck bunny"."""
 
 
-def parse_args(argv: list[str]) -> argparse.Namespace:
-    parser = argparse.ArgumentParser(
-        prog="torrent-cli",
-        description="Natural-language torrent search over Prowlarr, driven by an LLM.",
-    )
+def _add_global_opts(parser: argparse.ArgumentParser) -> None:
     parser.add_argument("--provider", choices=["ollama", "anthropic"], help="LLM backend to use.")
     parser.add_argument("--model", help="Model name for the chosen provider.")
     parser.add_argument("--prowlarr-url", dest="prowlarr_url", help="Prowlarr base URL.")
     parser.add_argument("--prowlarr-api-key", dest="prowlarr_api_key", help="Prowlarr API key.")
     parser.add_argument("--ollama-host", dest="ollama_host", help="Ollama host URL.")
     parser.add_argument("--no-color", action="store_true", help="Disable coloured output.")
+
+
+def parse_args(argv: list[str]) -> argparse.Namespace:
+    # Global options live on a shared parent so they're accepted either before
+    # or after a subcommand (or with no subcommand, which launches the REPL).
+    common = argparse.ArgumentParser(add_help=False)
+    _add_global_opts(common)
+
+    parser = argparse.ArgumentParser(
+        prog="torrent-cli",
+        parents=[common],
+        description="Natural-language torrent search over Prowlarr. "
+        "Run with no command for the interactive assistant, or use a subcommand directly.",
+    )
     parser.add_argument("--version", action="version", version=f"torrent-cli {__version__}")
+
+    sub = parser.add_subparsers(dest="command", metavar="[command]")
+
+    p = sub.add_parser("search", parents=[common], help="Search indexers for a query.")
+    p.add_argument("query", nargs="+", help="Search terms, e.g. ubuntu 24.04")
+    p.add_argument("--limit", type=int, help="Max results.")
+    p.add_argument("--json", action="store_true", help="Machine-readable output.")
+
+    p = sub.add_parser("grab", parents=[common], help="Grab a release id from the last search.")
+    p.add_argument("id", type=int, help="Release id from `search`.")
+    p.add_argument("--json", action="store_true", help="Machine-readable output.")
+
+    p = sub.add_parser("list-indexers", parents=[common], help="List configured indexers.")
+    p.add_argument("--json", action="store_true", help="Machine-readable output.")
+
+    p = sub.add_parser("find-indexers", parents=[common], help="Search the indexer catalogue.")
+    p.add_argument("query", nargs="+", help="Part of an indexer name.")
+    p.add_argument("--json", action="store_true", help="Machine-readable output.")
+
+    p = sub.add_parser("add-indexer", parents=[common], help="Add a public indexer by name.")
+    p.add_argument("name", nargs="+", help="Exact indexer name, e.g. LinuxTracker.")
+    p.add_argument("--json", action="store_true", help="Machine-readable output.")
+
+    sub.add_parser("mcp", parents=[common], help="Run the MCP server (stdio) for LLM agents.")
+
     return parser.parse_args(argv)
 
 
@@ -177,10 +212,26 @@ def _handle_indexers(arg: str, agent: Agent, ui: UI) -> None:
 def main() -> None:
     args = parse_args(sys.argv[1:])
     config = load_config(vars(args))
+
+    # MCP server: stdout is the protocol channel — build and run, no UI output.
+    if args.command == "mcp":
+        from .mcp_server import build_server
+
+        build_server(config).run()
+        return
+
     ui = UI(color=False if args.no_color else None)
-    if not _preflight(config, ui):
-        sys.exit(1)
-    sys.exit(run_repl(config, ui))
+
+    if args.command is None:
+        # No subcommand → interactive assistant (the conversational human path).
+        if not _preflight(config, ui):
+            sys.exit(1)
+        sys.exit(run_repl(config, ui))
+
+    # Direct subcommand → non-interactive human/script path.
+    from .commands import run_command
+
+    sys.exit(run_command(args, config, ui))
 
 
 if __name__ == "__main__":
