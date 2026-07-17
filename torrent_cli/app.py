@@ -85,6 +85,9 @@ def parse_args(argv: list[str]) -> argparse.Namespace:
     sub.add_parser("down", parents=[common], help="Tear the VPN stack down; host back to normal.")
     sub.add_parser("vpn-status", parents=[common], help="Show whether the VPN tunnel is up.")
 
+    sub.add_parser("monitor", parents=[common],
+                   help="Full-screen TUI: search/picker + live qBittorrent monitor.")
+
     return parser.parse_args(argv)
 
 
@@ -277,6 +280,12 @@ def main() -> None:
 
         fn = {"up": stack.up, "down": stack.down, "vpn-status": stack.status}[args.command]
         sys.exit(fn(config, ui))
+
+    # Full-screen monitoring TUI.
+    if args.command == "monitor":
+        from . import tui
+
+        sys.exit(tui.run(config, ui))
 
     if args.command is None:
         # No subcommand → interactive assistant (the conversational human path).

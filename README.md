@@ -231,6 +231,28 @@ claude mcp add torrent-cli \
 Tool-call approval happens in the MCP client (you approve each grab in Claude),
 so the server runs tools directly.
 
+## Live monitor (TUI)
+
+`torrent-cli monitor` opens a full-screen terminal UI — a qBittorrent-style live
+view plus a keyboard-driven search/picker. Stdlib `curses`, no third-party deps.
+
+- **Monitor plane:** live torrent list (progress, ↓/↑ speed, seeds/peers, state,
+  ETA), a download-speed graph, and the files of the selected torrent — updated
+  ~1×/sec from qBittorrent.
+- **Search/picker plane:** type a query → Prowlarr results → ↑/↓ to select →
+  Enter to grab.
+- **Two layouts:** *compact* (one plane at a time) and *compound* (picker on
+  top, monitor below). The plane you're in is signposted in the top corners.
+
+| Key         | Action                                        |
+|-------------|-----------------------------------------------|
+| ←/→         | switch plane (compact) / move focus (compound)|
+| ↑/↓         | move the selection                            |
+| Tab         | toggle compact / compound layout              |
+| Enter       | search (picker) · grab the selected result    |
+| *type*      | edit the search query (picker plane)          |
+| q / Ctrl-C  | quit                                          |
+
 ## Managing indexers
 
 Indexers are the sources Prowlarr searches. torrent-cli exposes indexer

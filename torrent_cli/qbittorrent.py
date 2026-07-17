@@ -8,11 +8,35 @@ torrent you (or the LLM) already have.
 
 from __future__ import annotations
 
+from dataclasses import dataclass
+
 import httpx
 
 
 class QBittorrentError(Exception):
     """Raised when qBittorrent is unreachable, rejects auth, or refuses a torrent."""
+
+
+@dataclass
+class Torrent:
+    hash: str
+    name: str
+    size: int
+    progress: float  # 0..1
+    dlspeed: int  # bytes/s
+    upspeed: int  # bytes/s
+    num_seeds: int
+    num_leechs: int
+    state: str
+    eta: int  # seconds (8640000 == unknown/infinite)
+    ratio: float
+
+
+@dataclass
+class TorrentFile:
+    name: str
+    size: int
+    progress: float  # 0..1
 
 
 class QBittorrentClient:
@@ -90,3 +114,45 @@ class QBittorrentClient:
         if resp.status_code >= 400 or resp.text.strip() == "Fails.":
             raise QBittorrentError(f"qBittorrent rejected the {label} (HTTP {resp.status_code}).")
         return label
+
+    # ---- monitoring -------------------------------------------------------
+    def _get_json(self, path: str, params: dict | None = None):
+        self._login()
+        try:
+            resp = self._client.get(f"{self.base_url}{path}", params=params)
+        except httpx.HTTPError as exc:
+            raise QBittorrentError(f"Could not reach qBittorrent at {self.base_url}: {exc}") from exc
+        if resp.status_code >= 400:
+            raise QBittorrentError(f"qBittorrent error (HTTP {resp.status_code}) on {path}.")
+        return resp.json()
+
+    def list_torrents(self) -> list[Torrent]:
+        rows = self._get_json("/api/v2/torrents/info")
+        return [
+            Torrent(
+                hash=t.get("hash", ""),
+                name=t.get("name", ""),
+                size=t.get("size", 0),
+                progress=t.get("progress", 0.0),
+                dlspeed=t.get("dlspeed", 0),
+                upspeed=t.get("upspeed", 0),
+                num_seeds=t.get("num_seeds", 0),
+                num_leechs=t.get("num_leechs", 0),
+                state=t.get("state", ""),
+                eta=t.get("eta", 8640000),
+                ratio=t.get("ratio", 0.0),
+            )
+            for t in rows
+        ]
+
+    def transfer_info(self) -> tuple[int, int]:
+        """Global (download, upload) speed in bytes/s."""
+        d = self._get_json("/api/v2/transfer/info")
+        return d.get("dl_info_speed", 0), d.get("up_info_speed", 0)
+
+    def torrent_files(self, torrent_hash: str) -> list[TorrentFile]:
+        rows = self._get_json("/api/v2/torrents/files", params={"hash": torrent_hash})
+        return [
+            TorrentFile(name=f.get("name", ""), size=f.get("size", 0), progress=f.get("progress", 0.0))
+            for f in rows
+        ]
