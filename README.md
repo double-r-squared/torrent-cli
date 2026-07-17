@@ -58,6 +58,29 @@ python3 -m venv .venv && source .venv/bin/activate
 pip install -e .
 ```
 
+## Don't have Prowlarr yet? Run the stack with Docker
+
+This repo ships a `docker-compose.yml` that brings up Prowlarr **and** qBittorrent
+on a shared network (so Prowlarr can hand grabs to qBittorrent by name):
+
+```bash
+PUID=$(id -u) PGID=$(id -g) docker compose up -d
+```
+
+Then, one-time setup:
+
+1. Open Prowlarr at <http://localhost:9696>.
+2. **Add an indexer**: Indexers → Add Indexer → e.g. `LinuxTracker` (public, Linux
+   ISOs) → Save.
+3. **Add the download client**: Settings → Download Clients → `+` → qBittorrent →
+   Host `qbittorrent`, Port `8080`, Username `admin`, Password from
+   `docker logs qbittorrent` (a temporary password is printed on first start;
+   set your own in qBittorrent → Options → Web UI).
+4. **Copy the API key**: Settings → General → Security → API Key, into your
+   `config.toml`.
+
+Downloads land in `./downloads`.
+
 ## Configure
 
 Copy the example config and fill it in (it's gitignored — it holds your keys):

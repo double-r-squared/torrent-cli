@@ -19,5 +19,6 @@ config.toml
 # OS
 .DS_Store
 
-# Prowlarr docker data (if run from repo)
+# Docker stack data (if run from repo)
 prowlarr-config/
+downloads/
