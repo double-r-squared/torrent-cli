@@ -80,6 +80,11 @@ def parse_args(argv: list[str]) -> argparse.Namespace:
 
     sub.add_parser("mcp", parents=[common], help="Run the MCP server (stdio) for LLM agents.")
 
+    sub.add_parser("up", parents=[common],
+                   help="Bring up the VPN-tunnelled container stack (gluetun + qBittorrent + Prowlarr).")
+    sub.add_parser("down", parents=[common], help="Tear the VPN stack down; host back to normal.")
+    sub.add_parser("vpn-status", parents=[common], help="Show whether the VPN tunnel is up.")
+
     return parser.parse_args(argv)
 
 
@@ -152,7 +157,11 @@ def _handle_command(raw: str, config: Config, agent: Agent, ui: UI) -> bool:
         ui.help(HELP_TEXT)
         return True
     if cmd == "/settings":
-        ui.settings(config.provider, config.resolved_model(), config.prowlarr_url, config.max_results)
+        from . import stack
+
+        ui.settings(config.provider, config.resolved_model(), config.prowlarr_url,
+                    config.max_results, vpn_provider=config.vpn_provider,
+                    vpn_configured=config.vpn_configured(), vpn_tunnel_ip=stack.tunnel_ip())
         try:
             ui.indexers(agent.prowlarr.list_indexers())
         except ProwlarrError as exc:
@@ -261,6 +270,13 @@ def main() -> None:
         return
 
     ui = UI(color=False if args.no_color else None)
+
+    # VPN stack lifecycle.
+    if args.command in ("up", "down", "vpn-status"):
+        from . import stack
+
+        fn = {"up": stack.up, "down": stack.down, "vpn-status": stack.status}[args.command]
+        sys.exit(fn(config, ui))
 
     if args.command is None:
         # No subcommand → interactive assistant (the conversational human path).

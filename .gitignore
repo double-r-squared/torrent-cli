@@ -13,6 +13,7 @@ venv/
 
 # Environment / secrets
 .env
+.env.local
 config.toml
 *.local.toml
 

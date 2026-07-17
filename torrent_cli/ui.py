@@ -56,14 +56,24 @@ class UI:
         print(f"{self._c('│ ', ACCENT)}{line}{self._c(' │', ACCENT)}")
         print(self._c(f"╰{bar}╯", ACCENT))
 
-    def settings(self, provider: str, model: str, prowlarr_url: str, max_results: int) -> None:
+    def settings(self, provider: str, model: str, prowlarr_url: str, max_results: int,
+                 vpn_provider: str | None = None, vpn_configured: bool = False,
+                 vpn_tunnel_ip: str | None = None) -> None:
         print(self._c("  settings", ACCENT_BOLD))
-        for label, value in (
+        rows = [
             ("provider", provider),
             ("model", model),
             ("prowlarr url", prowlarr_url),
             ("max results", str(max_results)),
-        ):
+        ]
+        if vpn_provider is not None:
+            if vpn_tunnel_ip:
+                rows.append(("vpn", f"up · {vpn_provider} · exit {vpn_tunnel_ip}"))
+            elif vpn_configured:
+                rows.append(("vpn", f"configured ({vpn_provider}) · not running — `torrent-cli up`"))
+            else:
+                rows.append(("vpn", "not configured (set wireguard_private_key in settings)"))
+        for label, value in rows:
             print(self._c(f"    {label:<13} {value}", MUTED))
         print(self._c("  change with /provider <name> or /model <name>", MUTED))
 

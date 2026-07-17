@@ -32,3 +32,12 @@ anthropic_api_key = ""
 qbittorrent_url = "http://localhost:8080"
 qbittorrent_username = "admin"
 qbittorrent_password = ""
+
+# ---- VPN (used by `torrent-cli up`, which runs the container stack with its
+#      traffic tunnelled through gluetun; the host's network is untouched) ----
+# ProtonVPN WireGuard values: account.protonvpn.com -> Downloads ->
+# WireGuard configuration; copy PrivateKey and Address from the .conf.
+vpn_provider = "protonvpn"
+wireguard_private_key = ""
+wireguard_addresses = ""        # e.g. "10.2.0.2/32"
+vpn_server_countries = ""       # e.g. "Switzerland"; blank = fastest

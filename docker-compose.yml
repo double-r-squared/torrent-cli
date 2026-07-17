@@ -1,17 +1,58 @@
-# Optional local stack for testing torrent-cli: Prowlarr (indexer manager) plus
-# qBittorrent (download client), on a shared network so Prowlarr can reach
-# qBittorrent by name.
+# VPN-tunnelled stack: gluetun (ProtonVPN/WireGuard) + qBittorrent routed
+# through it + Prowlarr. qBittorrent shares gluetun's network namespace, so its
+# torrent traffic exits via the VPN while the host's own network is untouched.
+# gluetun's kill switch stops the attached container's traffic if the tunnel
+# drops (no leak).
 #
-#   PUID=$(id -u) PGID=$(id -g) docker compose up -d
+# `torrent-cli up` generates this file plus a .env from your settings and runs
+# it for you. To run it by hand instead: copy .env.example to .env, fill in your
+# ProtonVPN WireGuard key, then `docker compose up -d`.
 #
-# Then: open Prowlarr at http://localhost:9696, add an indexer (e.g. LinuxTracker),
-# copy the API key (Settings -> General -> Security) into config.toml, and add
-# qBittorrent as a download client (host: qbittorrent, port: 8080).
+# Note: with qBittorrent behind the VPN, point Prowlarr's download client at
+# host `protonvpn` (the gluetun service), port 8080 — not `qbittorrent`.
 
 services:
+  protonvpn:
+    image: qmcgaw/gluetun:latest
+    container_name: torrentcli-vpn
+    cap_add:
+      - NET_ADMIN
+    devices:
+      - /dev/net/tun:/dev/net/tun
+    environment:
+      - VPN_SERVICE_PROVIDER=${VPN_SERVICE_PROVIDER:-protonvpn}
+      - VPN_TYPE=wireguard
+      - WIREGUARD_PRIVATE_KEY=${WIREGUARD_PRIVATE_KEY}
+      - WIREGUARD_ADDRESSES=${WIREGUARD_ADDRESSES}
+      - SERVER_COUNTRIES=${SERVER_COUNTRIES:-}
+      - FIREWALL_OUTBOUND_SUBNETS=${LAN_SUBNET:-172.16.0.0/12}
+    volumes:
+      - ./gluetun-auth.toml:/gluetun/auth/config.toml:ro
+    ports:
+      - "8080:8080"   # qBittorrent WebUI (shares this namespace)
+      - "8000:8000"   # gluetun control server (tunnel status)
+    networks: [arrnet]
+    restart: unless-stopped
+
+  qbittorrent:
+    image: lscr.io/linuxserver/qbittorrent:latest
+    container_name: torrentcli-qbittorrent
+    network_mode: "service:protonvpn"   # <- routed through the tunnel
+    environment:
+      - PUID=${PUID:-1000}
+      - PGID=${PGID:-1000}
+      - TZ=${TZ:-Etc/UTC}
+      - WEBUI_PORT=8080
+    volumes:
+      - qbittorrent-config:/config
+      - ./downloads:/downloads
+    depends_on:
+      - protonvpn
+    restart: unless-stopped
+
   prowlarr:
     image: lscr.io/linuxserver/prowlarr:latest
-    container_name: prowlarr
+    container_name: torrentcli-prowlarr
     environment:
       - PUID=${PUID:-1000}
       - PGID=${PGID:-1000}
@@ -20,22 +61,6 @@ services:
       - prowlarr-config:/config
     ports:
       - "9696:9696"
-    networks: [arrnet]
-    restart: unless-stopped
-
-  qbittorrent:
-    image: lscr.io/linuxserver/qbittorrent:latest
-    container_name: qbittorrent
-    environment:
-      - PUID=${PUID:-1000}
-      - PGID=${PGID:-1000}
-      - TZ=${TZ:-Etc/UTC}
-      - WEBUI_PORT=8080
-    volumes:
-      - qbittorrent-config:/config
-      - ./downloads:/downloads   # host dir so downloads land somewhere writable
-    ports:
-      - "8080:8080"
     networks: [arrnet]
     restart: unless-stopped
 

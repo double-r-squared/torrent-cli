@@ -31,6 +31,10 @@ _ENV = {
     "qbittorrent_url": "QBITTORRENT_URL",
     "qbittorrent_username": "QBITTORRENT_USERNAME",
     "qbittorrent_password": "QBITTORRENT_PASSWORD",
+    "vpn_provider": "TORRENT_CLI_VPN_PROVIDER",
+    "wireguard_private_key": "WIREGUARD_PRIVATE_KEY",
+    "wireguard_addresses": "WIREGUARD_ADDRESSES",
+    "vpn_server_countries": "SERVER_COUNTRIES",
 }
 
 
@@ -47,6 +51,14 @@ class Config:
     qbittorrent_url: str = "http://localhost:8080"
     qbittorrent_username: str = "admin"
     qbittorrent_password: str = ""
+    # VPN (routes the container stack's traffic through a tunnel; host untouched).
+    vpn_provider: str = "protonvpn"
+    wireguard_private_key: str = ""
+    wireguard_addresses: str = ""
+    vpn_server_countries: str = ""
+
+    def vpn_configured(self) -> bool:
+        return bool(self.wireguard_private_key and self.wireguard_addresses)
 
     def resolved_model(self) -> str:
         """The model to use, falling back to a sensible per-provider default."""

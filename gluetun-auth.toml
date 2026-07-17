@@ -1,0 +1,7 @@
+# gluetun control-server auth (gluetun v3.40+). Allows the read-only public-IP
+# status route without authentication so torrent-cli can poll tunnel status.
+# Not a secret — it only exposes "are we connected, and via which exit IP".
+[[roles]]
+name = "status"
+routes = ["GET /v1/publicip/ip"]
+auth = "none"

@@ -62,28 +62,63 @@ python3 -m venv .venv && source .venv/bin/activate
 pip install -e .
 ```
 
-## Don't have Prowlarr yet? Run the stack with Docker
+## Run the stack with Docker (VPN-tunnelled)
 
-This repo ships a `docker-compose.yml` that brings up Prowlarr **and** qBittorrent
-on a shared network (so Prowlarr can hand grabs to qBittorrent by name):
+This repo ships a `docker-compose.yml` for the whole stack: **gluetun
+(ProtonVPN / WireGuard) + qBittorrent routed through it + Prowlarr**. qBittorrent
+shares gluetun's network namespace, so its torrent traffic exits via the VPN
+while your **host's network is untouched**; gluetun's kill switch stops the
+download container if the tunnel drops (no leak). See [VPN](#vpn) below for the
+key setup — then `torrent-cli` manages the lifecycle:
 
 ```bash
-PUID=$(id -u) PGID=$(id -g) docker compose up -d
+torrent-cli up      # start the stack, wait for the tunnel, print the exit IP
+torrent-cli down    # tear it all down; host back to normal
+torrent-cli vpn-status
 ```
 
-Then, one-time setup:
+One-time Prowlarr setup (browser, <http://localhost:9696>):
 
-1. Open Prowlarr at <http://localhost:9696>.
-2. **Add an indexer**: Indexers → Add Indexer → e.g. `LinuxTracker` (public, Linux
-   ISOs) → Save.
-3. **Add the download client**: Settings → Download Clients → `+` → qBittorrent →
-   Host `qbittorrent`, Port `8080`, Username `admin`, Password from
-   `docker logs qbittorrent` (a temporary password is printed on first start;
-   set your own in qBittorrent → Options → Web UI).
-4. **Copy the API key**: Settings → General → Security → API Key, into your
-   `config.toml`.
+1. **Add an indexer**: e.g. `LinuxTracker` (public, Linux ISOs).
+2. **Add the download client**: qBittorrent, **Host `protonvpn`, Port `8080`**
+   (qBittorrent is behind gluetun, so Prowlarr reaches it via the gluetun
+   service — not `qbittorrent`). Username `admin`, password from
+   `docker logs torrentcli-qbittorrent`.
+3. **Copy the API key** (Settings → General → Security) into your `config.toml`.
 
-Downloads land in `./downloads`.
+Downloads land in `./downloads`. To run the compose by hand instead of via
+`torrent-cli up`, copy `.env.example` to `.env`, fill in your key, and
+`docker compose up -d`.
+
+## VPN
+
+torrent-cli can route the **containers'** traffic through a VPN while your host
+stays on its normal network — the single-box setup, but with torrent traffic
+tunnelled. It uses [gluetun](https://github.com/qdm12/gluetun) with ProtonVPN
+over WireGuard, and a kill switch so nothing leaks if the tunnel drops.
+
+**Get a ProtonVPN WireGuard key:** at
+[account.protonvpn.com](https://account.protonvpn.com) → Downloads → WireGuard
+configuration, generate a config, and copy the `PrivateKey` and `Address` out of
+the `.conf`. Put them in settings (`config.toml`), never in the request flow:
+
+```toml
+vpn_provider = "protonvpn"
+wireguard_private_key = "your-private-key"
+wireguard_addresses = "10.2.0.2/32"
+vpn_server_countries = "Switzerland"   # optional; blank = fastest
+```
+
+Then:
+
+```bash
+torrent-cli up          # VPN comes up with the stack; prints the exit IP
+# ... search and download as normal — qBittorrent's traffic is tunnelled ...
+torrent-cli down        # VPN and stack torn down; everything back to normal
+```
+
+`/settings` (and `torrent-cli vpn-status`) show whether the tunnel is up and its
+exit IP. More providers can be added later — for now it's ProtonVPN.
 
 ## Configure
 
