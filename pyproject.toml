@@ -13,7 +13,6 @@ authors = [{ name = "Nate Almanza" }]
 keywords = ["torrent", "prowlarr", "llm", "ollama", "anthropic", "cli", "tui"]
 
 dependencies = [
-    "rich>=13.7",
     "httpx>=0.27",
     "anthropic>=0.39",
     "ollama>=0.3",

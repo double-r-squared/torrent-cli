@@ -1,104 +1,132 @@
-"""Rich-powered terminal UI: header, spinner, results table, prompts."""
+"""Plain-text terminal UI — stdlib only, no third-party dependencies.
+
+Renders a header box, an aligned results table, and prompts using ordinary
+print()/input(). ANSI colour is used only when writing to a real terminal and
+NO_COLOR is unset (and --no-color wasn't passed); otherwise output is pure text,
+so it pipes, logs, and travels over SSH cleanly.
+"""
 
 from __future__ import annotations
 
-from rich.box import ROUNDED, SIMPLE_HEAVY
-from rich.console import Console
-from rich.panel import Panel
-from rich.prompt import Confirm, Prompt
-from rich.table import Table
-from rich.text import Text
+import contextlib
+import os
+import sys
 
 from .prowlarr import Release
 
-ACCENT = "#7dd3fc"  # sky blue
-MUTED = "grey62"
+# ANSI SGR parameter strings (256-colour for wide terminal support).
+ACCENT = "38;5;75"        # light blue
+ACCENT_BOLD = "1;38;5;75"
+MUTED = "38;5;245"        # grey
+GREEN = "32"
+YELLOW = "33"
+RED = "31"
+YELLOW_BOLD = "1;33"
+
+# Table column widths (title/indexer are truncated to fit).
+_W_ID, _W_TITLE, _W_SIZE, _W_SEEDS, _W_INDEXER = 3, 40, 8, 6, 12
+
+
+def _truncate(text: str, width: int) -> str:
+    if len(text) <= width:
+        return text
+    return text[: max(0, width - 1)] + "…"
 
 
 class UI:
-    def __init__(self) -> None:
-        self.console = Console()
+    def __init__(self, color: bool | None = None) -> None:
+        if color is None:
+            color = sys.stdout.isatty() and os.environ.get("NO_COLOR") is None
+        self.color = color
+
+    def _c(self, text: str, params: str) -> str:
+        """Wrap text in an ANSI colour if colour is enabled."""
+        if not self.color or not params:
+            return text
+        return f"\033[{params}m{text}\033[0m"
 
     # ---- chrome -----------------------------------------------------------
     def header(self, provider: str, model: str, prowlarr_url: str) -> None:
-        title = Text("torrent-cli", style=f"bold {ACCENT}")
-        subtitle = Text.assemble(
-            ("provider ", MUTED), (f"{provider}", "bold"),
-            ("  ·  model ", MUTED), (f"{model}", "bold"),
-            ("  ·  prowlarr ", MUTED), (f"{prowlarr_url}", "bold"),
-        )
-        body = Text.assemble(
-            title, "\n", subtitle, "\n\n",
-            ("Describe what you want to download. ", "default"),
-            ("Type ", MUTED), ("/help", ACCENT), (" for commands, ", MUTED),
-            ("/quit", ACCENT), (" to exit.", MUTED),
-        )
-        self.console.print(Panel(body, box=ROUNDED, border_style=ACCENT, padding=(1, 2)))
+        rows: list[tuple[str, str]] = [
+            ("torrent-cli", ACCENT_BOLD),
+            (f"provider {provider} · model {model} · prowlarr {prowlarr_url}", MUTED),
+            ("", ""),
+            ("Describe what you want to download.  Commands: /help  /quit", MUTED),
+        ]
+        inner = max(max(len(text) for text, _ in rows), 46)
+        bar = "─" * (inner + 2)
+        print(self._c(f"╭{bar}╮", ACCENT))
+        for text, code in rows:
+            padded = text.ljust(inner)
+            content = self._c(padded, code) if code else padded
+            print(f"{self._c('│ ', ACCENT)}{content}{self._c(' │', ACCENT)}")
+        print(self._c(f"╰{bar}╯", ACCENT))
 
     def prompt(self) -> str:
-        return Prompt.ask(Text("›", style=f"bold {ACCENT}"), console=self.console)
+        return input(self._c("› ", ACCENT_BOLD))
+
+    def help(self, text: str) -> None:
+        print(self._c(text, MUTED))
+
+    def newline(self) -> None:
+        print()
 
     # ---- model / status output -------------------------------------------
     def assistant(self, text: str) -> None:
-        self.console.print(Text(text, style="default"), highlight=False)
+        print(text)
 
     def info(self, text: str) -> None:
-        self.console.print(Text(f"  {text}", style=MUTED))
+        print(self._c(f"  {text}", MUTED))
 
     def success(self, text: str) -> None:
-        self.console.print(Text.assemble(("  ✓ ", "bold green"), (text, "green")))
+        print(f"  {self._c('✓', GREEN)} {self._c(text, GREEN)}")
 
     def error(self, text: str) -> None:
-        self.console.print(Text.assemble(("  ✗ ", "bold red"), (text, "red")))
+        print(f"  {self._c('✗', RED)} {self._c(text, RED)}")
 
+    @contextlib.contextmanager
     def searching(self, query: str):
-        """Context manager showing a spinner while a search runs."""
-        return self.console.status(
-            Text.assemble(("searching prowlarr for ", MUTED), (f"“{query}”", ACCENT), ("…", MUTED)),
-            spinner="dots",
-        )
+        """Print a one-line status before a search. No animation, so it pipes."""
+        print(self._c(f"  searching prowlarr for “{query}”…", MUTED))
+        yield
 
     # ---- results ----------------------------------------------------------
     def render_results(self, query: str, releases: list[Release]) -> None:
-        table = Table(
-            box=SIMPLE_HEAVY,
-            border_style=MUTED,
-            header_style=f"bold {ACCENT}",
-            expand=False,
-            pad_edge=False,
+        count = self._c(str(len(releases)), ACCENT_BOLD)
+        plural = "s" if len(releases) != 1 else ""
+        print()
+        print(f"  {count} result{plural} for “{query}”")
+
+        header = (
+            f"  {'#':>{_W_ID}}  {'Title':<{_W_TITLE}}  {'Size':>{_W_SIZE}}  "
+            f"{'Seeds':>{_W_SEEDS}}  {'Indexer':<{_W_INDEXER}}"
         )
-        table.add_column("#", justify="right", style="bold", width=3)
-        table.add_column("Title", overflow="ellipsis", max_width=52, no_wrap=True)
-        table.add_column("Size", justify="right", width=8)
-        table.add_column("Seeds", justify="right", width=6)
-        table.add_column("Indexer", overflow="ellipsis", max_width=18, no_wrap=True, style=MUTED)
+        print(self._c(header, ACCENT))
+        rule_width = _W_ID + _W_TITLE + _W_SIZE + _W_SEEDS + _W_INDEXER + 8
+        print(self._c("  " + "─" * rule_width, MUTED))
 
         for r in releases:
             seeders = r.seeders if r.seeders is not None else 0
-            seed_style = "green" if seeders >= 20 else ("yellow" if seeders >= 3 else "red")
-            table.add_row(
-                str(r.id),
-                r.title,
-                r.size,
-                Text(str(seeders), style=seed_style),
-                r.indexer,
+            seed_code = GREEN if seeders >= 20 else (YELLOW if seeders >= 3 else RED)
+            cells = (
+                f"{r.id:>{_W_ID}}",
+                f"{_truncate(r.title, _W_TITLE):<{_W_TITLE}}",
+                f"{r.size:>{_W_SIZE}}",
+                self._c(f"{seeders:>{_W_SEEDS}}", seed_code),
+                self._c(f"{_truncate(r.indexer, _W_INDEXER):<{_W_INDEXER}}", MUTED),
             )
-
-        count = Text.assemble(
-            ("  ", ""), (f"{len(releases)}", f"bold {ACCENT}"),
-            (f" result{'s' if len(releases) != 1 else ''} for ", MUTED), (f"“{query}”", "default"),
-        )
-        self.console.print()
-        self.console.print(count)
-        self.console.print(table)
+            print("  " + "  ".join(cells))
 
     # ---- confirmation gate -----------------------------------------------
     def confirm_grab(self, release: Release) -> bool:
         seeders = release.seeders if release.seeders is not None else 0
-        detail = Text.assemble(
-            ("Grab this release?\n\n", "bold"),
-            (f"  {release.title}\n", ACCENT),
-            (f"  {release.size}  ·  {seeders} seeders  ·  {release.indexer}", MUTED),
-        )
-        self.console.print(Panel(detail, box=ROUNDED, border_style="yellow", padding=(1, 2)))
-        return Confirm.ask("  Start download", default=False, console=self.console)
+        print()
+        print(self._c("  ┌─ grab this release? ─", YELLOW))
+        print(f"  {self._c('│', YELLOW)}  {self._c(release.title, ACCENT_BOLD)}")
+        print(f"  {self._c('│', YELLOW)}  {self._c(f'{release.size} · {seeders} seeders · {release.indexer}', MUTED)}")
+        print(self._c("  └", YELLOW))
+        try:
+            answer = input(f"  {self._c('start download?', YELLOW_BOLD)} [y/N] ").strip().lower()
+        except EOFError:
+            return False
+        return answer in ("y", "yes")

@@ -31,6 +31,7 @@ def parse_args(argv: list[str]) -> argparse.Namespace:
     parser.add_argument("--prowlarr-url", dest="prowlarr_url", help="Prowlarr base URL.")
     parser.add_argument("--prowlarr-api-key", dest="prowlarr_api_key", help="Prowlarr API key.")
     parser.add_argument("--ollama-host", dest="ollama_host", help="Ollama host URL.")
+    parser.add_argument("--no-color", action="store_true", help="Disable coloured output.")
     parser.add_argument("--version", action="version", version=f"torrent-cli {__version__}")
     return parser.parse_args(argv)
 
@@ -71,7 +72,7 @@ def run_repl(config: Config, ui: UI) -> int:
         try:
             raw = ui.prompt().strip()
         except (EOFError, KeyboardInterrupt):
-            ui.console.print()
+            ui.newline()
             break
 
         if not raw:
@@ -97,7 +98,7 @@ def _handle_command(raw: str, config: Config, agent: Agent, ui: UI) -> bool:
     if cmd in ("/quit", "/exit"):
         return False
     if cmd == "/help":
-        ui.console.print(ui.console.render_str(HELP_TEXT, highlight=False))
+        ui.help(HELP_TEXT)
         return True
     if cmd == "/clear":
         agent.reset()
@@ -132,7 +133,7 @@ def _handle_command(raw: str, config: Config, agent: Agent, ui: UI) -> bool:
 def main() -> None:
     args = parse_args(sys.argv[1:])
     config = load_config(vars(args))
-    ui = UI()
+    ui = UI(color=False if args.no_color else None)
     if not _preflight(config, ui):
         sys.exit(1)
     sys.exit(run_repl(config, ui))

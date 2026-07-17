@@ -8,6 +8,10 @@ one, and starts the download **only after you approve it**.
 Works with a **local model via [Ollama](https://ollama.com)** or **Anthropic's
 Claude** — same interface, pick per run.
 
+The interface is plain text with no third-party UI dependencies, so it's
+portable: colour auto-enables in a terminal and falls away cleanly when piped,
+logged, run over SSH, or with `--no-color` / `NO_COLOR`.
+
 ```
 ╭─────────────────────────────────────────────────────────╮
 │ torrent-cli                                             │
@@ -107,6 +111,7 @@ Precedence: **CLI flag > env var > config.toml > default**.
 torrent-cli                          # uses your config.toml
 torrent-cli --provider ollama --model llama3.2:3b
 torrent-cli --provider anthropic --model claude-opus-4-8
+torrent-cli --no-color               # force plain text (also honours NO_COLOR)
 ```
 
 In the REPL:
