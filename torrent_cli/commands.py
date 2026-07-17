@@ -15,6 +15,7 @@ from pathlib import Path
 
 from .config import Config
 from .prowlarr import ProwlarrClient, ProwlarrError, Release
+from .qbittorrent import QBittorrentClient, QBittorrentError
 from .ui import UI
 
 
@@ -76,8 +77,27 @@ def _load_last_search() -> dict[int, Release]:
 
 def run_command(args, config: Config, ui: UI) -> int:
     """Dispatch a direct subcommand. Returns a process exit code."""
-    prowlarr = ProwlarrClient(config.prowlarr_url, config.prowlarr_api_key)
     as_json = getattr(args, "json", False)
+
+    # grab-url talks to qBittorrent directly, not Prowlarr.
+    if args.command == "grab-url":
+        qb = QBittorrentClient(
+            config.qbittorrent_url, config.qbittorrent_username, config.qbittorrent_password
+        )
+        try:
+            label = qb.add(args.url)
+        except QBittorrentError as exc:
+            _emit_error(str(exc), ui, as_json)
+            return 1
+        finally:
+            qb.close()
+        if as_json:
+            print(json.dumps({"status": "grabbed", "source": args.url, "via": label}))
+        else:
+            ui.success(f"Sent {label} to qBittorrent.")
+        return 0
+
+    prowlarr = ProwlarrClient(config.prowlarr_url, config.prowlarr_api_key)
     try:
         return _dispatch(args, config, ui, prowlarr, as_json)
     except ProwlarrError as exc:
@@ -85,6 +105,15 @@ def run_command(args, config: Config, ui: UI) -> int:
         return 1
     finally:
         prowlarr.close()
+
+
+def _parse_fields(field_args: list[str] | None) -> dict:
+    values = {}
+    for item in field_args or []:
+        key, sep, val = item.partition("=")
+        if sep:
+            values[key.strip()] = val
+    return values
 
 
 def _emit_error(message: str, ui: UI, as_json: bool) -> None:
@@ -145,7 +174,18 @@ def _dispatch(args, config: Config, ui: UI, prowlarr: ProwlarrClient, as_json: b
 
     if cmd == "add-indexer":
         name = " ".join(args.name)
-        indexer = prowlarr.add_indexer(name)
+        field_values = _parse_fields(getattr(args, "field", None))
+        needed = prowlarr.indexer_credential_fields(name)
+        if needed and not field_values:
+            if as_json:
+                print(json.dumps({"error": "credentials required",
+                                  "fields": [f["name"] for f in needed]}))
+            else:
+                ui.info(f"'{name}' needs credentials. Provide them with --field, e.g.:")
+                ui.info("  add-indexer " + name + " " +
+                        " ".join(f"--field {f['name']}=…" for f in needed))
+            return 1
+        indexer = prowlarr.add_indexer(name, field_values=field_values or None)
         if as_json:
             print(json.dumps({"status": "added", "indexer": indexer.__dict__}))
         else:

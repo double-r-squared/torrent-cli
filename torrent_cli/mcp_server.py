@@ -22,6 +22,7 @@ import json
 
 from .config import Config, load_config
 from .prowlarr import ProwlarrClient, ProwlarrError, Release
+from .qbittorrent import QBittorrentClient, QBittorrentError
 
 
 def build_server(config: Config):
@@ -37,6 +38,9 @@ def build_server(config: Config):
 
     server = FastMCP("torrent-cli")
     prowlarr = ProwlarrClient(config.prowlarr_url, config.prowlarr_api_key)
+    qbittorrent = QBittorrentClient(
+        config.qbittorrent_url, config.qbittorrent_username, config.qbittorrent_password
+    )
     last_results: dict[int, Release] = {}
 
     @server.tool()
@@ -65,6 +69,17 @@ def build_server(config: Config):
         except ProwlarrError as exc:
             return json.dumps({"error": str(exc)})
         return json.dumps({"status": "grabbed", "title": release.title})
+
+    @server.tool()
+    def grab_url(url: str) -> str:
+        """Download a torrent from a magnet link or a direct .torrent URL, straight
+        to the download client (bypasses Prowlarr search). Use when the user has a
+        specific magnet/torrent link."""
+        try:
+            label = qbittorrent.add(url)
+        except QBittorrentError as exc:
+            return json.dumps({"error": str(exc)})
+        return json.dumps({"status": "grabbed", "source": url, "via": label})
 
     @server.tool()
     def add_indexer(name: str) -> str:

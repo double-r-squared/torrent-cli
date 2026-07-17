@@ -6,6 +6,7 @@ import json
 
 from .prowlarr import ProwlarrClient, ProwlarrError, Release
 from .providers import Provider, ToolCall
+from .qbittorrent import QBittorrentClient, QBittorrentError
 from .tools import SYSTEM_PROMPT, TOOL_SCHEMAS
 from .ui import UI
 
@@ -13,9 +14,17 @@ MAX_TOOL_ITERATIONS = 6
 
 
 class Agent:
-    def __init__(self, provider: Provider, prowlarr: ProwlarrClient, ui: UI, max_results: int = 15) -> None:
+    def __init__(
+        self,
+        provider: Provider,
+        prowlarr: ProwlarrClient,
+        ui: UI,
+        qbittorrent: QBittorrentClient | None = None,
+        max_results: int = 15,
+    ) -> None:
         self.provider = provider
         self.prowlarr = prowlarr
+        self.qbittorrent = qbittorrent
         self.ui = ui
         self.max_results = max_results
         self.messages: list[dict] = []
@@ -64,6 +73,8 @@ class Agent:
             return self._tool_search(call.arguments)
         if call.name == "grab_release":
             return self._tool_grab(call.arguments)
+        if call.name == "grab_url":
+            return self._tool_grab_url(call.arguments)
         if call.name == "list_indexers":
             return self._tool_list_indexers()
         if call.name == "find_indexers":
@@ -71,6 +82,22 @@ class Agent:
         if call.name == "add_indexer":
             return self._tool_add_indexer(call.arguments)
         return json.dumps({"error": f"unknown tool {call.name}"})
+
+    def _tool_grab_url(self, args: dict) -> str:
+        url = str(args.get("url", "")).strip()
+        if not url:
+            return json.dumps({"error": "url was empty"})
+        if self.qbittorrent is None:
+            msg = "No download client configured. Set qbittorrent_url/username/password."
+            self.ui.error(msg)
+            return json.dumps({"error": msg})
+        try:
+            label = self.qbittorrent.add(url)
+        except QBittorrentError as exc:
+            self.ui.error(str(exc))
+            return json.dumps({"error": str(exc)})
+        self.ui.success(f"Sent {label} to qBittorrent.")
+        return json.dumps({"status": "grabbed", "source": url})
 
     def _tool_list_indexers(self) -> str:
         try:

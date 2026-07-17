@@ -26,3 +26,9 @@ ollama_host = "http://localhost:11434"
 # ---- Anthropic (only used when provider = "anthropic") ----
 # Prefer the ANTHROPIC_API_KEY environment variable over storing it here.
 anthropic_api_key = ""
+
+# ---- qBittorrent (only used by `grab-url`, which sends a torrent/magnet
+#      straight to the download client, bypassing Prowlarr) ----
+qbittorrent_url = "http://localhost:8080"
+qbittorrent_username = "admin"
+qbittorrent_password = ""

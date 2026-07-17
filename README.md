@@ -104,6 +104,12 @@ Precedence: **CLI flag > env var > config.toml > default**.
 | Prowlarr API key   | `prowlarr_api_key`  | `PROWLARR_API_KEY`  | `--prowlarr-api-key`  |
 | Ollama host        | `ollama_host`       | `OLLAMA_HOST`       | `--ollama-host`       |
 | Anthropic API key  | `anthropic_api_key` | `ANTHROPIC_API_KEY` | —                     |
+| qBittorrent URL    | `qbittorrent_url`   | `QBITTORRENT_URL`   | —                     |
+| qBittorrent user   | `qbittorrent_username` | `QBITTORRENT_USERNAME` | —               |
+| qBittorrent pass   | `qbittorrent_password` | `QBITTORRENT_PASSWORD` | —               |
+
+(qBittorrent settings are only needed for `grab-url`, which talks to the
+download client directly.)
 
 ## Run
 
@@ -121,6 +127,7 @@ In the REPL:
 | *(plain text)*      | a request, e.g. `find debian 12`      |
 | `/settings`         | show provider, model, URL, and indexers |
 | `/indexers`         | list/add/remove indexers (see below)  |
+| `/grab <url>`       | download a magnet link or .torrent URL directly |
 | `/provider <name>`  | switch between `ollama` and `anthropic` |
 | `/model <name>`     | switch model for the current provider |
 | `/clear`            | clear the conversation                |
@@ -143,14 +150,16 @@ torrent-cli grab 1                 # grabs result #1 from your last search
 torrent-cli list-indexers
 torrent-cli find-indexers linux
 torrent-cli add-indexer LinuxTracker
+torrent-cli add-indexer MyTracker --field username=me --field password=secret
+torrent-cli grab-url "magnet:?xt=urn:btih:..."   # hand a magnet/.torrent to qBittorrent
 torrent-cli search sintel --json | jq .results
 ```
 
 `search` remembers its results, so a later `grab <id>` — even in a separate
 shell — knows which release you mean.
 
-**3. MCP server (LLM agents).** Exposes `search`, `grab`, `add_indexer`,
-`list_indexers`, and `find_indexers` over the
+**3. MCP server (LLM agents).** Exposes `search`, `grab`, `grab_url`,
+`add_indexer`, `list_indexers`, and `find_indexers` over the
 [Model Context Protocol](https://modelcontextprotocol.io), so Claude Desktop,
 Claude Code, or any MCP client can drive Prowlarr.
 
@@ -199,18 +208,27 @@ terminal is for humans, the tool calls are for the LLM.
 |----------------------------|------------------------------------------|
 | `/indexers`                | list configured indexers                 |
 | `/indexers find <query>`   | search the catalog of available indexers |
-| `/indexers add <name>`     | add a public indexer by name             |
+| `/indexers add <name>`     | add an indexer (prompts for a login if it's private) |
 | `/indexers remove <id>`    | remove an indexer                        |
+
+Adding a **public** tracker just works. Adding a **private** one that needs a
+login: `/indexers add <name>` detects the required fields and prompts you for
+them (passwords are hidden). Non-interactively, use the CLI:
+
+```bash
+torrent-cli add-indexer MyTracker --field username=me --field password=secret
+```
+
+That's the manual, human path — you enter the credentials, in keeping with the
+settings-vs-main-UI split (credentials live in the config/settings surface, not
+the request flow).
 
 **Via the LLM (headless):** the model has matching tools it can call on its own
 — `list_indexers`, `find_indexers(query)`, and `add_indexer(name)` — so you can
 just say *"what sources do I have?"* or *"add the linuxtracker indexer"* and it
-drives the same operations. If a search comes up empty because no relevant
-source is configured, the model can find and add a public one, then retry.
-
-Adding runs Prowlarr's connectivity test, so only **reachable public** indexers
-(no login) get added; private indexers that need credentials must be added in
-the Prowlarr web UI.
+drives the same operations. The AI adds **public** trackers on its own; anything
+needing a **login** is left to you to add manually (the AI never handles your
+credentials).
 
 ## Good things to search for
 

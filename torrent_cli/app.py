@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import argparse
+import getpass
 import sys
 
 from . import __version__
@@ -10,12 +11,14 @@ from .agent import Agent
 from .config import Config, load_config
 from .prowlarr import ProwlarrClient, ProwlarrError
 from .providers import Provider, build_provider
+from .qbittorrent import QBittorrentClient, QBittorrentError
 from .ui import UI
 
 HELP_TEXT = """commands:
   /help              show this help
   /settings          show provider, model, Prowlarr URL, and indexers
   /indexers          manage sources: /indexers [find <q> | add <name> | remove <id>]
+  /grab <url>        download a magnet link or .torrent URL directly
   /provider <name>   switch backend: ollama | anthropic
   /model <name>      switch the model (for the current provider)
   /clear             clear the conversation history
@@ -57,6 +60,11 @@ def parse_args(argv: list[str]) -> argparse.Namespace:
     p.add_argument("id", type=int, help="Release id from `search`.")
     p.add_argument("--json", action="store_true", help="Machine-readable output.")
 
+    p = sub.add_parser("grab-url", parents=[common],
+                       help="Send a magnet link or .torrent URL straight to qBittorrent.")
+    p.add_argument("url", help="A magnet: link or an http(s) .torrent URL.")
+    p.add_argument("--json", action="store_true", help="Machine-readable output.")
+
     p = sub.add_parser("list-indexers", parents=[common], help="List configured indexers.")
     p.add_argument("--json", action="store_true", help="Machine-readable output.")
 
@@ -64,8 +72,10 @@ def parse_args(argv: list[str]) -> argparse.Namespace:
     p.add_argument("query", nargs="+", help="Part of an indexer name.")
     p.add_argument("--json", action="store_true", help="Machine-readable output.")
 
-    p = sub.add_parser("add-indexer", parents=[common], help="Add a public indexer by name.")
+    p = sub.add_parser("add-indexer", parents=[common], help="Add an indexer by name.")
     p.add_argument("name", nargs="+", help="Exact indexer name, e.g. LinuxTracker.")
+    p.add_argument("--field", action="append", metavar="KEY=VALUE",
+                   help="Credential/config field for private trackers (repeatable).")
     p.add_argument("--json", action="store_true", help="Machine-readable output.")
 
     sub.add_parser("mcp", parents=[common], help="Run the MCP server (stdio) for LLM agents.")
@@ -101,7 +111,10 @@ def run_repl(config: Config, ui: UI) -> int:
         return 1
 
     prowlarr = ProwlarrClient(config.prowlarr_url, config.prowlarr_api_key)
-    agent = Agent(provider, prowlarr, ui, max_results=config.max_results)
+    qbittorrent = QBittorrentClient(
+        config.qbittorrent_url, config.qbittorrent_username, config.qbittorrent_password
+    )
+    agent = Agent(provider, prowlarr, ui, qbittorrent=qbittorrent, max_results=config.max_results)
 
     ui.header()
 
@@ -123,6 +136,7 @@ def run_repl(config: Config, ui: UI) -> int:
         agent.handle(raw)
 
     prowlarr.close()
+    qbittorrent.close()
     return 0
 
 
@@ -146,6 +160,19 @@ def _handle_command(raw: str, config: Config, agent: Agent, ui: UI) -> bool:
         return True
     if cmd == "/indexers":
         _handle_indexers(arg, agent, ui)
+        return True
+    if cmd == "/grab":
+        if not arg:
+            ui.error("Usage: /grab <magnet-link-or-.torrent-URL>")
+            return True
+        if agent.qbittorrent is None:
+            ui.error("No download client configured (qbittorrent_url/username/password).")
+            return True
+        try:
+            label = agent.qbittorrent.add(arg)
+            ui.success(f"Sent {label} to qBittorrent.")
+        except QBittorrentError as exc:
+            ui.error(str(exc))
         return True
     if cmd == "/clear":
         agent.reset()
@@ -195,7 +222,20 @@ def _handle_indexers(arg: str, agent: Agent, ui: UI) -> None:
             if not rest:
                 ui.error("Usage: /indexers add <name>")
                 return
-            indexer = prowlarr.add_indexer(rest)
+            # Private trackers need credentials — prompt for each field.
+            fields = prowlarr.indexer_credential_fields(rest)
+            values = {}
+            if fields:
+                ui.info(f"'{rest}' needs credentials — enter each (blank to skip):")
+                for f in fields:
+                    label = f.get("label") or f.get("name")
+                    if f.get("type") == "password":
+                        val = getpass.getpass(f"    {label}: ")
+                    else:
+                        val = input(f"    {label}: ").strip()
+                    if val:
+                        values[f["name"]] = val
+            indexer = prowlarr.add_indexer(rest, field_values=values or None)
             ui.success(f"Added indexer: {indexer.name}")
         elif sub == "remove":
             if not rest.isdigit():

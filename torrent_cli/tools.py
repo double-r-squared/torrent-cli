@@ -36,6 +36,25 @@ TOOL_SCHEMAS: list[dict] = [
         },
     },
     {
+        "name": "grab_url",
+        "description": (
+            "Download a torrent the user already has the link for — a magnet link or a "
+            "direct .torrent URL (e.g. an archive.org torrent). This hands it straight to "
+            "the download client, bypassing search. Use it when the user pastes or names a "
+            "specific magnet/torrent URL to download."
+        ),
+        "parameters": {
+            "type": "object",
+            "properties": {
+                "url": {
+                    "type": "string",
+                    "description": "A magnet: link or an http(s) URL to a .torrent file.",
+                },
+            },
+            "required": ["url"],
+        },
+    },
+    {
         "name": "list_indexers",
         "description": (
             "List the indexers currently configured in Prowlarr — the sources that "
@@ -122,6 +141,9 @@ nothing and it's likely because no relevant source is configured, use \
 `list_indexers` to check what's set up, `find_indexers` to locate a public one \
 (e.g. "LinuxTracker" for Linux ISOs), and `add_indexer` to add it — then search \
 again. Say which indexer you added. If nothing fits, tell the user.
+
+If the user gives you a specific magnet link or .torrent URL to download, use \
+`grab_url` directly — no search needed.
 
 Keep replies short. The user already sees the results table, so don't re-list \
 every release — just give your recommendation and next step."""

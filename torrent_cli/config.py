@@ -28,6 +28,9 @@ _ENV = {
     "ollama_host": "OLLAMA_HOST",
     "anthropic_api_key": "ANTHROPIC_API_KEY",
     "max_results": "TORRENT_CLI_MAX_RESULTS",
+    "qbittorrent_url": "QBITTORRENT_URL",
+    "qbittorrent_username": "QBITTORRENT_USERNAME",
+    "qbittorrent_password": "QBITTORRENT_PASSWORD",
 }
 
 
@@ -40,6 +43,10 @@ class Config:
     ollama_host: str = "http://localhost:11434"
     anthropic_api_key: str = ""
     max_results: int = 15
+    # Direct download-client connection (for grab-url, which bypasses Prowlarr).
+    qbittorrent_url: str = "http://localhost:8080"
+    qbittorrent_username: str = "admin"
+    qbittorrent_password: str = ""
 
     def resolved_model(self) -> str:
         """The model to use, falling back to a sensible per-provider default."""

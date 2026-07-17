@@ -236,27 +236,48 @@ class ProwlarrClient:
             for d in matches[:limit]
         ]
 
-    def add_indexer(self, name: str) -> ConfiguredIndexer:
-        """Add an indexer by its exact (or unambiguous) definition name.
-
-        Works for public indexers that need no credentials. Private indexers
-        that require a login raise a ProwlarrError pointing to the web UI.
-        Idempotent: returns the existing indexer if it's already configured.
-        """
+    def _find_schema(self, name: str) -> dict:
+        """Resolve an indexer definition by exact or unambiguous partial name."""
         key = name.lower().strip()
         schema = next((d for d in self._indexer_schema() if d.get("name", "").lower() == key), None)
-        if schema is None:
-            partial = [d for d in self._indexer_schema() if key in d.get("name", "").lower()]
-            if len(partial) == 1:
-                schema = partial[0]
-            elif len(partial) > 1:
-                names = ", ".join(d["name"] for d in partial[:8])
-                raise ProwlarrError(f"'{name}' is ambiguous. Matches: {names}")
-            else:
-                raise ProwlarrError(
-                    f"No indexer definition named '{name}'. Use find_indexer_definitions to search."
-                )
+        if schema is not None:
+            return schema
+        partial = [d for d in self._indexer_schema() if key in d.get("name", "").lower()]
+        if len(partial) == 1:
+            return partial[0]
+        if len(partial) > 1:
+            names = ", ".join(d["name"] for d in partial[:8])
+            raise ProwlarrError(f"'{name}' is ambiguous. Matches: {names}")
+        raise ProwlarrError(
+            f"No indexer definition named '{name}'. Use find_indexer_definitions to search."
+        )
 
+    def indexer_credential_fields(self, name: str) -> list[dict]:
+        """Fields a human must fill to add this indexer (empty, non-advanced
+        credential-type fields — logins, API keys, cookies). Empty for public
+        indexers or ones already configured."""
+        schema = self._find_schema(name)
+        for existing in self.list_indexers():
+            if existing.name.lower() == schema.get("name", "").lower():
+                return []
+        fields = []
+        for f in schema.get("fields", []):
+            if f.get("type") in ("textbox", "password") and not f.get("value") and not f.get("advanced"):
+                fields.append(
+                    {"name": f.get("name"), "label": f.get("label", f.get("name")),
+                     "type": f.get("type", "textbox")}
+                )
+        return fields
+
+    def add_indexer(self, name: str, field_values: dict | None = None) -> ConfiguredIndexer:
+        """Add an indexer by its exact (or unambiguous) definition name.
+
+        Public indexers need no `field_values`. Private ones take a dict of
+        field name -> value (username/password/apikey/etc.); Prowlarr's add-time
+        connectivity test validates the credentials. Idempotent: returns the
+        existing indexer if it's already configured.
+        """
+        schema = self._find_schema(name)
         for existing in self.list_indexers():
             if existing.name.lower() == schema.get("name", "").lower():
                 return existing  # already configured
@@ -264,14 +285,20 @@ class ProwlarrClient:
         body = dict(schema)
         body["enable"] = True
         body["appProfileId"] = self._app_profile_id()
+        if field_values:
+            body["fields"] = [dict(f) for f in body.get("fields", [])]
+            for f in body["fields"]:
+                if f.get("name") in field_values:
+                    f["value"] = field_values[f["name"]]
 
         try:
             created = self._post_indexer(body)
         except ProwlarrError as exc:
-            if schema.get("privacy") != "public":
+            if schema.get("privacy") != "public" and not field_values:
                 raise ProwlarrError(
-                    f"'{schema['name']}' is {schema.get('privacy')} and needs credentials; "
-                    f"add it in the Prowlarr web UI at {self.base_url}. ({exc})"
+                    f"'{schema['name']}' is {schema.get('privacy')} and needs credentials — "
+                    f"add it manually (e.g. `/indexers add {schema['name']}` in the app, or "
+                    f"`add-indexer --field ...`). ({exc})"
                 ) from exc
             raise
 
