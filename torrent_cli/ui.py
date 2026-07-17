@@ -46,21 +46,26 @@ class UI:
         return f"\033[{params}m{text}\033[0m"
 
     # ---- chrome -----------------------------------------------------------
-    def header(self, provider: str, model: str, prowlarr_url: str) -> None:
-        rows: list[tuple[str, str]] = [
-            ("torrent-cli", ACCENT_BOLD),
-            (f"provider {provider} · model {model} · prowlarr {prowlarr_url}", MUTED),
-            ("", ""),
-            ("Describe what you want to download.  Commands: /help  /quit", MUTED),
-        ]
-        inner = max(max(len(text) for text, _ in rows), 46)
+    def header(self) -> None:
+        name, cmds = "torrent-cli", "/help  /settings"
+        inner = max(40, len(name) + len(cmds) + 4)
+        gap = inner - len(name) - len(cmds)
+        line = f"{self._c(name, ACCENT_BOLD)}{' ' * gap}{self._c(cmds, MUTED)}"
         bar = "─" * (inner + 2)
         print(self._c(f"╭{bar}╮", ACCENT))
-        for text, code in rows:
-            padded = text.ljust(inner)
-            content = self._c(padded, code) if code else padded
-            print(f"{self._c('│ ', ACCENT)}{content}{self._c(' │', ACCENT)}")
+        print(f"{self._c('│ ', ACCENT)}{line}{self._c(' │', ACCENT)}")
         print(self._c(f"╰{bar}╯", ACCENT))
+
+    def settings(self, provider: str, model: str, prowlarr_url: str, max_results: int) -> None:
+        print(self._c("  settings", ACCENT_BOLD))
+        for label, value in (
+            ("provider", provider),
+            ("model", model),
+            ("prowlarr url", prowlarr_url),
+            ("max results", str(max_results)),
+        ):
+            print(self._c(f"    {label:<13} {value}", MUTED))
+        print(self._c("  change with /provider <name> or /model <name>", MUTED))
 
     def prompt(self) -> str:
         return input(self._c("› ", ACCENT_BOLD))

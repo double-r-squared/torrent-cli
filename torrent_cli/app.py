@@ -14,6 +14,7 @@ from .ui import UI
 
 HELP_TEXT = """commands:
   /help              show this help
+  /settings          show current provider, model, and Prowlarr URL
   /provider <name>   switch backend: ollama | anthropic
   /model <name>      switch the model (for the current provider)
   /clear             clear the conversation history
@@ -66,7 +67,7 @@ def run_repl(config: Config, ui: UI) -> int:
     prowlarr = ProwlarrClient(config.prowlarr_url, config.prowlarr_api_key)
     agent = Agent(provider, prowlarr, ui, max_results=config.max_results)
 
-    ui.header(config.provider, config.resolved_model(), config.prowlarr_url)
+    ui.header()
 
     while True:
         try:
@@ -99,6 +100,9 @@ def _handle_command(raw: str, config: Config, agent: Agent, ui: UI) -> bool:
         return False
     if cmd == "/help":
         ui.help(HELP_TEXT)
+        return True
+    if cmd == "/settings":
+        ui.settings(config.provider, config.resolved_model(), config.prowlarr_url, config.max_results)
         return True
     if cmd == "/clear":
         agent.reset()
