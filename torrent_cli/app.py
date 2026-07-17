@@ -8,13 +8,14 @@ import sys
 from . import __version__
 from .agent import Agent
 from .config import Config, load_config
-from .prowlarr import ProwlarrClient
+from .prowlarr import ProwlarrClient, ProwlarrError
 from .providers import Provider, build_provider
 from .ui import UI
 
 HELP_TEXT = """commands:
   /help              show this help
-  /settings          show current provider, model, and Prowlarr URL
+  /settings          show provider, model, Prowlarr URL, and indexers
+  /indexers          manage sources: /indexers [find <q> | add <name> | remove <id>]
   /provider <name>   switch backend: ollama | anthropic
   /model <name>      switch the model (for the current provider)
   /clear             clear the conversation history
@@ -103,6 +104,13 @@ def _handle_command(raw: str, config: Config, agent: Agent, ui: UI) -> bool:
         return True
     if cmd == "/settings":
         ui.settings(config.provider, config.resolved_model(), config.prowlarr_url, config.max_results)
+        try:
+            ui.indexers(agent.prowlarr.list_indexers())
+        except ProwlarrError as exc:
+            ui.info(f"(indexers unavailable: {exc})")
+        return True
+    if cmd == "/indexers":
+        _handle_indexers(arg, agent, ui)
         return True
     if cmd == "/clear":
         agent.reset()
@@ -132,6 +140,38 @@ def _handle_command(raw: str, config: Config, agent: Agent, ui: UI) -> bool:
 
     ui.error(f"Unknown command {cmd}. Try /help.")
     return True
+
+
+def _handle_indexers(arg: str, agent: Agent, ui: UI) -> None:
+    """Human-facing indexer management: /indexers [list | find <q> | add <name> | remove <id>]."""
+    parts = arg.split(maxsplit=1)
+    sub = parts[0].lower() if parts else "list"
+    rest = parts[1].strip() if len(parts) > 1 else ""
+    prowlarr = agent.prowlarr
+    try:
+        if sub in ("", "list"):
+            ui.indexers(prowlarr.list_indexers())
+        elif sub == "find":
+            if not rest:
+                ui.error("Usage: /indexers find <query>")
+                return
+            ui.indexer_matches(rest, prowlarr.find_indexer_definitions(rest))
+        elif sub == "add":
+            if not rest:
+                ui.error("Usage: /indexers add <name>")
+                return
+            indexer = prowlarr.add_indexer(rest)
+            ui.success(f"Added indexer: {indexer.name}")
+        elif sub == "remove":
+            if not rest.isdigit():
+                ui.error("Usage: /indexers remove <id>   (id shown by /indexers)")
+                return
+            prowlarr.remove_indexer(int(rest))
+            ui.success(f"Removed indexer {rest}")
+        else:
+            ui.error("Usage: /indexers [list | find <query> | add <name> | remove <id>]")
+    except ProwlarrError as exc:
+        ui.error(str(exc))
 
 
 def main() -> None:

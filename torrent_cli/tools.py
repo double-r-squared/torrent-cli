@@ -36,6 +36,53 @@ TOOL_SCHEMAS: list[dict] = [
         },
     },
     {
+        "name": "list_indexers",
+        "description": (
+            "List the indexers currently configured in Prowlarr — the sources that "
+            "searches run against. Call this to see what's available or to check "
+            "whether a relevant source already exists."
+        ),
+        "parameters": {"type": "object", "properties": {}},
+    },
+    {
+        "name": "find_indexers",
+        "description": (
+            "Search Prowlarr's catalog of available indexer definitions by name "
+            "(there are hundreds). Returns names you can pass to add_indexer. Use "
+            "this when you need to add a source but aren't sure of the exact name."
+        ),
+        "parameters": {
+            "type": "object",
+            "properties": {
+                "query": {
+                    "type": "string",
+                    "description": "Part of an indexer name, e.g. 'linux', '1337', 'archive'.",
+                },
+            },
+            "required": ["query"],
+        },
+    },
+    {
+        "name": "add_indexer",
+        "description": (
+            "Add an indexer to Prowlarr by its exact definition name (e.g. 'LinuxTracker', "
+            "'1337x', 'YTS'). Works for public indexers that need no login. Use when a "
+            "search finds nothing because no suitable source is configured, or when the "
+            "user asks to add one. Private indexers that need credentials must be added in "
+            "the Prowlarr web UI. Tell the user which indexer you added."
+        ),
+        "parameters": {
+            "type": "object",
+            "properties": {
+                "name": {
+                    "type": "string",
+                    "description": "Exact indexer name from find_indexers, e.g. 'LinuxTracker'.",
+                },
+            },
+            "required": ["name"],
+        },
+    },
+    {
         "name": "grab_release",
         "description": (
             "Send a release to the download client to start downloading it. Only call "
@@ -70,7 +117,11 @@ clearly matches the request. Briefly say why in one sentence.
 3. To download, call `grab_release` with that release's id. The user is asked to \
 confirm before anything downloads, so it is fine to propose a grab — but never \
 grab something the user hasn't agreed to.
-4. If a search returns nothing, try one reformulated query, then tell the user.
+4. If a search returns nothing, try one reformulated query. If it still finds \
+nothing and it's likely because no relevant source is configured, use \
+`list_indexers` to check what's set up, `find_indexers` to locate a public one \
+(e.g. "LinuxTracker" for Linux ISOs), and `add_indexer` to add it — then search \
+again. Say which indexer you added. If nothing fits, tell the user.
 
 Keep replies short. The user already sees the results table, so don't re-list \
 every release — just give your recommendation and next step."""

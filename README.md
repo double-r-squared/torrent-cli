@@ -119,11 +119,38 @@ In the REPL:
 | Command             | What it does                          |
 |---------------------|---------------------------------------|
 | *(plain text)*      | a request, e.g. `find debian 12`      |
+| `/settings`         | show provider, model, URL, and indexers |
+| `/indexers`         | list/add/remove indexers (see below)  |
 | `/provider <name>`  | switch between `ollama` and `anthropic` |
 | `/model <name>`     | switch model for the current provider |
 | `/clear`            | clear the conversation                |
 | `/help`             | show commands                         |
 | `/quit`             | exit                                  |
+
+## Managing indexers
+
+Indexers are the sources Prowlarr searches. torrent-cli exposes indexer
+management through **two parallel interfaces over the same Prowlarr API** — the
+terminal is for humans, the tool calls are for the LLM.
+
+**In the terminal (for you):**
+
+| Command                    | What it does                             |
+|----------------------------|------------------------------------------|
+| `/indexers`                | list configured indexers                 |
+| `/indexers find <query>`   | search the catalog of available indexers |
+| `/indexers add <name>`     | add a public indexer by name             |
+| `/indexers remove <id>`    | remove an indexer                        |
+
+**Via the LLM (headless):** the model has matching tools it can call on its own
+— `list_indexers`, `find_indexers(query)`, and `add_indexer(name)` — so you can
+just say *"what sources do I have?"* or *"add the linuxtracker indexer"* and it
+drives the same operations. If a search comes up empty because no relevant
+source is configured, the model can find and add a public one, then retry.
+
+Adding runs Prowlarr's connectivity test, so only **reachable public** indexers
+(no login) get added; private indexers that need credentials must be added in
+the Prowlarr web UI.
 
 ## Good things to search for
 

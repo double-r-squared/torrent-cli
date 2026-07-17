@@ -42,6 +42,20 @@ def _query_variants(query: str) -> list[str]:
     return out
 
 
+def _format_validation(resp: httpx.Response) -> str:
+    """Turn Prowlarr's validation-error array into a readable one-liner."""
+    try:
+        data = resp.json()
+        if isinstance(data, list):
+            msgs = [d.get("errorMessage", "") for d in data if isinstance(d, dict)]
+            msgs = [m for m in msgs if m]
+            if msgs:
+                return "; ".join(msgs)
+    except Exception:  # noqa: BLE001 - fall back to raw text
+        pass
+    return f"HTTP {resp.status_code}: {resp.text[:200]}"
+
+
 def human_size(num_bytes: int | None) -> str:
     if not num_bytes or num_bytes < 0:
         return "?"
@@ -84,10 +98,32 @@ class Release:
         }
 
 
+@dataclass
+class ConfiguredIndexer:
+    """An indexer currently set up in Prowlarr (a source searches run against)."""
+
+    id: int
+    name: str
+    enabled: bool
+    privacy: str
+    protocol: str
+
+
+@dataclass
+class IndexerDefinition:
+    """An entry from Prowlarr's catalog of indexers that *could* be added."""
+
+    name: str
+    privacy: str
+    protocol: str
+    implementation: str
+
+
 class ProwlarrClient:
     def __init__(self, base_url: str, api_key: str, timeout: float = 45.0) -> None:
         self.base_url = base_url.rstrip("/")
         self.api_key = api_key
+        self._schema_cache: list | None = None
         self._client = httpx.Client(
             timeout=timeout,
             headers={"X-Api-Key": api_key, "Accept": "application/json"},
@@ -169,3 +205,130 @@ class ProwlarrClient:
 
         if resp.status_code >= 400:
             raise ProwlarrError(f"Grab failed ({resp.status_code}): {resp.text[:200]}")
+
+    # ---- indexer management ----------------------------------------------
+    def list_indexers(self) -> list[ConfiguredIndexer]:
+        """The indexers currently configured in Prowlarr."""
+        resp = self._get("/api/v1/indexer", "list indexers")
+        return [
+            ConfiguredIndexer(
+                id=i["id"],
+                name=i.get("name", ""),
+                enabled=i.get("enable", False),
+                privacy=i.get("privacy", "?"),
+                protocol=i.get("protocol", "torrent"),
+            )
+            for i in resp.json()
+        ]
+
+    def find_indexer_definitions(self, query: str, limit: int = 25) -> list[IndexerDefinition]:
+        """Search Prowlarr's catalog of ~hundreds of indexer definitions by name."""
+        q = query.lower().strip()
+        matches = [d for d in self._indexer_schema() if q in d.get("name", "").lower()]
+        matches.sort(key=lambda d: d.get("name", "").lower())
+        return [
+            IndexerDefinition(
+                name=d.get("name", ""),
+                privacy=d.get("privacy", "?"),
+                protocol=d.get("protocol", "torrent"),
+                implementation=d.get("implementation", ""),
+            )
+            for d in matches[:limit]
+        ]
+
+    def add_indexer(self, name: str) -> ConfiguredIndexer:
+        """Add an indexer by its exact (or unambiguous) definition name.
+
+        Works for public indexers that need no credentials. Private indexers
+        that require a login raise a ProwlarrError pointing to the web UI.
+        Idempotent: returns the existing indexer if it's already configured.
+        """
+        key = name.lower().strip()
+        schema = next((d for d in self._indexer_schema() if d.get("name", "").lower() == key), None)
+        if schema is None:
+            partial = [d for d in self._indexer_schema() if key in d.get("name", "").lower()]
+            if len(partial) == 1:
+                schema = partial[0]
+            elif len(partial) > 1:
+                names = ", ".join(d["name"] for d in partial[:8])
+                raise ProwlarrError(f"'{name}' is ambiguous. Matches: {names}")
+            else:
+                raise ProwlarrError(
+                    f"No indexer definition named '{name}'. Use find_indexer_definitions to search."
+                )
+
+        for existing in self.list_indexers():
+            if existing.name.lower() == schema.get("name", "").lower():
+                return existing  # already configured
+
+        body = dict(schema)
+        body["enable"] = True
+        body["appProfileId"] = self._app_profile_id()
+
+        try:
+            created = self._post_indexer(body)
+        except ProwlarrError as exc:
+            if schema.get("privacy") != "public":
+                raise ProwlarrError(
+                    f"'{schema['name']}' is {schema.get('privacy')} and needs credentials; "
+                    f"add it in the Prowlarr web UI at {self.base_url}. ({exc})"
+                ) from exc
+            raise
+
+        return ConfiguredIndexer(
+            id=created["id"],
+            name=created.get("name", ""),
+            enabled=created.get("enable", False),
+            privacy=created.get("privacy", "?"),
+            protocol=created.get("protocol", "torrent"),
+        )
+
+    def remove_indexer(self, indexer_id: int) -> None:
+        try:
+            resp = self._client.delete(f"{self.base_url}/api/v1/indexer/{indexer_id}")
+        except httpx.HTTPError as exc:
+            raise ProwlarrError(f"Could not reach Prowlarr at {self.base_url}: {exc}") from exc
+        if resp.status_code >= 400 and resp.status_code != 404:
+            raise ProwlarrError(f"Remove failed ({resp.status_code}): {resp.text[:200]}")
+
+    # ---- internal helpers -------------------------------------------------
+    def _get(self, path: str, action: str) -> httpx.Response:
+        try:
+            resp = self._client.get(f"{self.base_url}{path}")
+        except httpx.HTTPError as exc:
+            raise ProwlarrError(f"Could not reach Prowlarr at {self.base_url}: {exc}") from exc
+        if resp.status_code == 401:
+            raise ProwlarrError("Prowlarr rejected the API key (401). Check your key.")
+        if resp.status_code >= 400:
+            raise ProwlarrError(f"Failed to {action} ({resp.status_code}): {resp.text[:200]}")
+        return resp
+
+    def _indexer_schema(self) -> list:
+        if self._schema_cache is None:
+            self._schema_cache = self._get("/api/v1/indexer/schema", "load indexer catalog").json()
+        return self._schema_cache
+
+    def _app_profile_id(self) -> int:
+        try:
+            profiles = self._client.get(f"{self.base_url}/api/v1/appprofile").json()
+            return profiles[0]["id"] if profiles else 1
+        except (httpx.HTTPError, KeyError, IndexError):
+            return 1
+
+    def _post_indexer(self, body: dict) -> dict:
+        """Add an indexer. Prowlarr runs a connectivity test as part of the add;
+        we let it, so we only ever configure sources that actually work rather
+        than force-adding broken ones."""
+        url = f"{self.base_url}/api/v1/indexer"
+        try:
+            resp = self._client.post(url, json=body)
+        except httpx.TimeoutException as exc:
+            raise ProwlarrError(
+                "Timed out adding the indexer — Prowlarr's connectivity test didn't "
+                "finish (the site may be slow or unreachable). Try another indexer."
+            ) from exc
+        except httpx.HTTPError as exc:
+            raise ProwlarrError(f"Could not reach Prowlarr at {self.base_url}: {exc}") from exc
+        if resp.status_code >= 400:
+            raise ProwlarrError(_format_validation(resp))
+        return resp.json()

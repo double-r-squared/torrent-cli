@@ -64,7 +64,46 @@ class Agent:
             return self._tool_search(call.arguments)
         if call.name == "grab_release":
             return self._tool_grab(call.arguments)
+        if call.name == "list_indexers":
+            return self._tool_list_indexers()
+        if call.name == "find_indexers":
+            return self._tool_find_indexers(call.arguments)
+        if call.name == "add_indexer":
+            return self._tool_add_indexer(call.arguments)
         return json.dumps({"error": f"unknown tool {call.name}"})
+
+    def _tool_list_indexers(self) -> str:
+        try:
+            indexers = self.prowlarr.list_indexers()
+        except ProwlarrError as exc:
+            self.ui.error(str(exc))
+            return json.dumps({"error": str(exc)})
+        self.ui.indexers(indexers)
+        return json.dumps({"count": len(indexers), "indexers": [i.__dict__ for i in indexers]})
+
+    def _tool_find_indexers(self, args: dict) -> str:
+        query = str(args.get("query", "")).strip()
+        if not query:
+            return json.dumps({"error": "query was empty"})
+        try:
+            defs = self.prowlarr.find_indexer_definitions(query)
+        except ProwlarrError as exc:
+            self.ui.error(str(exc))
+            return json.dumps({"error": str(exc)})
+        self.ui.indexer_matches(query, defs)
+        return json.dumps({"query": query, "count": len(defs), "definitions": [d.__dict__ for d in defs]})
+
+    def _tool_add_indexer(self, args: dict) -> str:
+        name = str(args.get("name", "")).strip()
+        if not name:
+            return json.dumps({"error": "name was empty"})
+        try:
+            indexer = self.prowlarr.add_indexer(name)
+        except ProwlarrError as exc:
+            self.ui.error(str(exc))
+            return json.dumps({"error": str(exc)})
+        self.ui.success(f"Added indexer: {indexer.name}")
+        return json.dumps({"status": "added", "indexer": indexer.__dict__})
 
     def _tool_search(self, args: dict) -> str:
         query = str(args.get("query", "")).strip()

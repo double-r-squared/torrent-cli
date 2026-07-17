@@ -12,7 +12,7 @@ import contextlib
 import os
 import sys
 
-from .prowlarr import Release
+from .prowlarr import ConfiguredIndexer, IndexerDefinition, Release
 
 # ANSI SGR parameter strings (256-colour for wide terminal support).
 ACCENT = "38;5;75"        # light blue
@@ -121,6 +121,24 @@ class UI:
                 self._c(f"{_truncate(r.indexer, _W_INDEXER):<{_W_INDEXER}}", MUTED),
             )
             print("  " + "  ".join(cells))
+
+    # ---- indexers ---------------------------------------------------------
+    def indexers(self, indexers: list[ConfiguredIndexer]) -> None:
+        if not indexers:
+            print(self._c("  no indexers configured — add one with /indexers add <name>", MUTED))
+            return
+        print(self._c(f"  {len(indexers)} configured indexer(s)", ACCENT_BOLD))
+        for i in indexers:
+            state = self._c("on", GREEN) if i.enabled else self._c("off", RED)
+            print(f"    {self._c(f'[{i.id}]', MUTED)} {i.name}  {self._c(f'· {i.privacy}', MUTED)}  {state}")
+
+    def indexer_matches(self, query: str, defs: list[IndexerDefinition]) -> None:
+        if not defs:
+            print(self._c(f"  no indexer definitions match “{query}”", MUTED))
+            return
+        print(self._c(f"  {len(defs)} match(es) for “{query}”  ·  add with /indexers add <name>", ACCENT_BOLD))
+        for d in defs:
+            print(f"    {d.name}  {self._c(f'· {d.privacy} · {d.protocol}', MUTED)}")
 
     # ---- confirmation gate -----------------------------------------------
     def confirm_grab(self, release: Release) -> bool:
