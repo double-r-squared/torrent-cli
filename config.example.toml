@@ -1,0 +1,28 @@
+# Copy this file to `config.toml` and fill in your values.
+# `config.toml` is gitignored because it holds your API keys.
+#
+# Every value here can also be set with an environment variable or a
+# command-line flag. Precedence (highest wins): CLI flag > env var > config.toml.
+
+# Which LLM backend drives the search: "ollama" (local) or "anthropic" (cloud).
+provider = "ollama"
+
+# Model to use. Leave blank to use the per-provider default
+# (ollama -> "llama3.2:3b", anthropic -> "claude-opus-4-8").
+model = ""
+
+# ---- Prowlarr ----
+# The base URL of your Prowlarr instance and its API key.
+# Find the key in Prowlarr under: Settings -> General -> Security -> API Key.
+prowlarr_url = "http://localhost:9696"
+prowlarr_api_key = ""
+
+# How many search results to keep (sorted by seeders, highest first).
+max_results = 15
+
+# ---- Ollama (only used when provider = "ollama") ----
+ollama_host = "http://localhost:11434"
+
+# ---- Anthropic (only used when provider = "anthropic") ----
+# Prefer the ANTHROPIC_API_KEY environment variable over storing it here.
+anthropic_api_key = ""

@@ -1,0 +1,34 @@
+[build-system]
+requires = ["hatchling"]
+build-backend = "hatchling.build"
+
+[project]
+name = "torrent-cli"
+version = "0.1.0"
+description = "A natural-language torrent search assistant: describe what you want, an LLM finds it via Prowlarr and you approve the grab."
+readme = "README.md"
+requires-python = ">=3.11"
+license = { file = "LICENSE" }
+authors = [{ name = "Nate Almanza" }]
+keywords = ["torrent", "prowlarr", "llm", "ollama", "anthropic", "cli", "tui"]
+
+dependencies = [
+    "rich>=13.7",
+    "httpx>=0.27",
+    "anthropic>=0.39",
+    "ollama>=0.3",
+]
+
+[project.optional-dependencies]
+dev = ["ruff>=0.6", "pytest>=8.0"]
+
+[project.scripts]
+torrent-cli = "torrent_cli.app:main"
+tcli = "torrent_cli.app:main"
+
+[tool.hatch.build.targets.wheel]
+packages = ["torrent_cli"]
+
+[tool.ruff]
+line-length = 100
+target-version = "py311"
